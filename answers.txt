@@ -1,0 +1,139 @@
+Name: Stanley(Ching) Hsu
+UCLA ID: 704338787
+
+-------------------------------------------------------------------------------
+
+Response to Exercise 1:
+Yes, it will have returned the correct value because the register file is backed up when the context switch is performed (each process has its own register stack)
+
+Exercise 3:
+When sys_wait is called, in mpos-kern.c, case INT_SYS_WAIT, I set the current profcess's state to be blocked, and the p_wait_on (process it's waiting on) to be the pid_t p.
+
+Then, in INT_SYS_EXIT, it will wake up processes that were waiting on p by calling a function exit_process. The function changes the current state to be P_ZOMBIE and its exit status to be the %eax value. Then, it goes through a loop to check which processes were waiting on p, and make them to be P_RUNNABLE again. 
+
+
+
+
+Anything else you'd like us to know:
+
+
+
+Extra credit exercises:
+
+Exercise 5:
+//Source: http://stackoverflow.com/questions/9935190/why-is-a-point-to-volatile-pointer-like-volatile-int-p-useful
+void start(void){
+	int x = 0; // note that local variable x lives on the stack
+	
+	volatile int *ptr_to_vol_int = &x;
+	int *volatile vol_ptr_to_int = &x;
+
+	pid_t p = sys_fork();
+	if (p == 0){ // child process
+		ptr_to_vol_int = &x;
+		vol_ptr_to_int = &x;
+		*ptr_to_vol_int = 1;
+		*vol_ptr_to_int = 1;
+	}
+	else if (p > 0){ // parent process
+		sys_wait(p); // assume blocking implementation
+	}
+	app_printf("%d", x);
+	sys_exit(0);
+}
+
+Exercise 6:
+	//mpos.h
+	#define INT_SYS_NEWTHREAD 53
+
+	//mpos-app.h
+	static inline pid_t
+	sys_newthread(void (*start_function)(void)){
+		pid_t result;
+		asm volatile("int %1\n"
+						: "=a"(result)
+						: "i" (INT_SYS_NEWTHREAD),
+						  "b" (start_function)
+						: "cc", "memory");
+		return result;
+	}
+
+	//mpos-kern.c
+	void interrupt(registers_t *reg){
+		.
+		.
+		.
+		case INT_SYS_NEWTHREAD:
+			current->p_registers.reg_eax=do_newthread(current, current->p_registers.reg_ebx);
+			run(current);
+		.
+		.
+		.
+	}
+
+	pid_t do_newthread(process_t *parent, int start_function_addr){
+		process_t* avail;
+		int offset = 1;
+		while(1){
+			if(offset==NPROCS)
+				return -1;
+			avail=&(proc_array[offset]);
+			if(avail->p_state==EMPTY)
+				break;
+			offset++;
+		}
+
+		avail->p_registers = parent->registers;
+		avail->p_registers.reg_eip = start_function_addr;
+
+		avail->p_state = P_RUNNABLE;
+		avail->p_registers.reg_eax=0;
+		return avail->p_pid;
+	}
+
+
+
+Exercise 7:
+	//mpos.h
+	#define INT_SYS_KILL 54
+
+	//mpos-app.h
+	static inline int
+	sys_kill(pid_t pid){
+		int result;
+		asm volatile("int %1\n"
+						: "=a"(result)
+						: "i" (INT_SYS_KILL),
+						  "b" (pid)
+						: "cc", "memory");
+		return result;
+	}
+
+
+	//mpos-kern.c
+	void interrupt(registers_t *reg){
+		.
+		.
+		.
+		case INT_SYS_KILL:
+			exit_process(current->p_registers.reg_ebx);
+			schedule();
+		.
+		.
+		.
+	}
+
+
+
+	//mpos-app2.c
+	void
+	run_child(void){	
+		.
+		.
+		.
+		if ((sys_getpid() % 2) == 0){
+			int result = sys_kill(sys_getpid()+1);
+		}
+		.
+		.
+	}
